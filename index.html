@@ -6,11 +6,11 @@
 	<link rel="stylesheet" href="roboto.css" type="text/css" />
 	<link rel="stylesheet" href="css/metro-icons.css" type="text/css" />
 	<link rel="stylesheet" href="css/metro.css" type="text/css" />
-	<script src="js/jquery.js"></script>
+	<script src="js/jquery.js" onload="window.$ = window.jQuery = module.exports;"></script>
 	<script src="js/metro.js"></script>
 	<script src="script.js"></script>
-	
-	
+
+
 </head>
 <style type="text/css">
 	* {
@@ -25,7 +25,7 @@
 	  -moz-user-select: none;      /* Firefox */
 	  -ms-user-select: none;       /* IE/Edge */
 	  user-select: none;           /* non-prefixed version, currently not supported by any browser */
-      cursor: default;  
+      cursor: default;
 	}
 
 	body {
@@ -77,14 +77,14 @@
 <div id="links_list" class="input-control textarea"
     data-role="input" data-text-auto-resize="false">
     <label for="links_list_data">Lista de links <small>(1 link por linha)</small></label>
-    <textarea id="links_textarea">http://api.ipify.org/</textarea>
+    <textarea id="links_textarea"></textarea>
 </div>
 <br>
 <br>
 <div id="proxy_file_list" class="input-control file" data-role="input">
 	<label for="proxy_file">Lista de Proxy's</label>
-    <input type="file" id="proxy_file" name="proxy_file" accept=".txt,.csv">
-    <button class="button"><span class="mif-folder"></span></button>
+    <input type="text" id="proxy_file" name="proxy_file">
+    <button class="button" onclick="window.open_file();"><span class="mif-folder"></span></button>
 </div>
 <br><br>
 <button id="iniciar_btn" class="button disabled">Iniciar</button>

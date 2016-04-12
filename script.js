@@ -1,6 +1,11 @@
-window.gui = require('nw.gui');
-window.win = gui.Window.get();
 window.fs = require('fs');
+window.remote = require('remote');
+window.dialog = remote.require('dialog');
+window.electron = remote.require('electron');
+window.storage = require('electron-json-storage');
+window.BrowserWindow = require('electron').remote.BrowserWindow;
+window.session = require('remote').getCurrentWebContents().session;
+var app = window.electron.app;
 
 window.App = {
 	proxy_data: Array(),
@@ -12,13 +17,24 @@ window.App = {
 	clicks_no: 0,
 	timeout: 35000,
 	done: false,
-	started: false,
+	running: false,
 	proxy_file_name: "",
 	interval: null,
 	next: false,
 	last_window: new Date().getTime(),
 	current_window: null,
+	running_interval: null,
+	timedout: false,
+	intervals: {
+		wait_after_click: null,
+		wait_time: null
+	},
+	wait_time: 10000,
+	wait_after_click: 4000,
+
 };
+
+
 
 try {
 	$(function() {
@@ -26,7 +42,6 @@ try {
 		window.change_status = function(message) {
 			$("#current_status").html(message);
 			console.log(message);
-
 			window.update_status();
 		};
 
@@ -43,7 +58,31 @@ try {
 
 		window.is_valid_link = function(link) {
 			var regexp = /(ftp|http|https):\/\/(\w+:{0,1}\w*@)?(\S+)(:[0-9]+)?(\/|\/([\w#!:.?+=&%@!\-\/]))?/;
-     		return regexp.test(link);    
+			return regexp.test(link);
+		};
+
+		window.validateNum = function(input, min, max) {
+		    var num = +input;
+		    return num >= min && num <= max && input === num.toString();
+		};
+
+		window.validateIpAndPort = function(input) {
+		    var parts = input.split(":");
+		    var ip = parts[0].split(".");
+		    var port = parts[1];
+		    return validateNum(port, 1, 65535) &&
+		        ip.length == 4 &&
+		        ip.every(function (segment) {
+		            return validateNum(segment, 0, 255);
+		        });
+		};
+
+
+
+		window.save_links = function() {
+			window.storage.set('links_textarea', {
+				data: $('#links_textarea').val()
+			}, function(error) {});
 		};
 
 		window.get_links = function () {
@@ -55,12 +94,11 @@ try {
 				links_data = Array();
 
 				for(var i = 0; i < links_textarea.length; i++) {
-					if (window.is_valid_link(links_textarea[i])) { 
+					if (window.is_valid_link(links_textarea[i])) {
 						links_data.push(links_textarea[i]);
 						has_valid_links = true;
 					}
 				}
-
 
 				if (has_valid_links) {
 					$("#iniciar_btn").removeClass("disabled");
@@ -69,7 +107,7 @@ try {
 				}
 
 				App.links_data = links_data;
-				
+
 			} else {
 				$("#iniciar_btn").addClass("disabled");
 			}
@@ -77,176 +115,240 @@ try {
 			window.update_status();
 		};
 
-		
-
-		$("#links_textarea").keypress(function() { 
+		$("#links_textarea").keypress(function() {
 			window.get_links();
+			window.save_links();
 		});
 
-		$("#links_textarea").bind('input propertychange', function() { 
+		$("#links_textarea").bind('input propertychange', function() {
 			window.get_links();
+			window.save_links();
 		});
 
 		$('#links_textarea').on('paste', function () {
 			window.get_links();
+			window.save_links();
 		});
 
-		$("#proxy_file_list input").change(function() {
-			setTimeout( function(){
-				var file_name = $("#proxy_file").val();
-				localStorage.setItem("proxy_list", file_name);
-				window.read_proxy_list(file_name);
-			}, 1);
-		});
+		window.open_file = function() {
+			dialog.showOpenDialog({ filters: [
+			   { name: 'Arquivos aceitos', extensions: ['txt', 'csv'] }
+			 ]}, function (fileNames) {
+				if (fileNames === undefined) {
+					return;
+				}
+
+				App.proxy_file_name = fileNames[0];
+				window.storage.set('proxy_list', { data: App.proxy_file_name }, function(error) {});
+				window.read_proxy_list(fileNames[0]);
+				var file_name = App.proxy_file_name.split("\\");
+				file_name = file_name[file_name.length - 1];
+				$(document).find("#proxy_file_list input[type=text]").val(file_name);
+			});
+		};
 
 		window.change_proxy = function(proxy) {
 			proxy = String(proxy).trim();
-			//gui.App.setProxyConfig(proxy);
-			App.current_proxy = proxy;
+			window.session.setProxy({
+				"proxyRules": proxy
+			}, function() {
+				App.current_proxy = proxy;
+				change_status("Proxy alterado");
+			});
 		};
 
 		window.next_proxy = function() {
 			if (!App.proxy_data) {
-				throw "Nenhuma lista de Proxy's carregada";
+				dialog.showErrorBox("Ops, ocorreu um erro", "Nenhuma lista de proxy foi carregada");
+				App.running = false;
+				return;
 			}
+
+			var call_next_proxy = false;
 
 			change_status("Alterando proxy...");
 			App.current_proxy = App.proxy_data[App.current_proxy_no];
-			change_proxy(App.current_proxy);
+			App.current_proxy = String(App.current_proxy).trim();
+			if (window.validateIpAndPort(App.current_proxy)) {
+					change_proxy(App.current_proxy);
+			} else {
+				dialog.showErrorBox("Ops, ocorreu um erro", "Não foi possivel definir o proxy: " + App.current_proxy);
+				call_next_proxy = true;
+			}
+
 			App.current_proxy_no++;
 			console.log(App.current_proxy);
-			change_status("Proxy Alterado");
 
 			if (App.current_proxy_no >= App.proxy_data.length) {
 				App.current_proxy = "0.0.0.0:00";
+				App.running = false;
 				App.done = true;
-				clearInterval(App.interval);
 				change_status("Lista de Proxy completa");
+				dialog.showMessageBox({
+					type: 'info',
+					buttons: ['OK'],
+					message: 'Lista de Proxy completa'
+				});
 				setTimeout(function() {
 					change_status("Lista de Proxy completa");
 				}, 5000);
-				
+			} else {
+				if (call_next_proxy) {
+					window.next_proxy();
+				}
 			}
 		};
 
-		window.read_proxy_list = function(filename, callback) {
-			window.fs.readFile(filename, "utf8", function (err, data) {
-	            if (err) {
-	            	throw ("Erro ao abrir o arquivo " + filename);
-	            	console.log("Erro ao abrir o arquivo " + filename);
-	            	console.log(err);
-	            } else {
-	            	App.proxy_data = data;
-	            	change_status("Carregando lista de Proxy's");
-	            	App.proxy_data = App.proxy_data.split('\n');
-            		change_status("Pronto");
-            		callback();
-				}
-	        });
+		window.read_proxy_list = function(filename) {
+			if (filename) {
+				fs.readFile(filename, "utf8", function (err, data) {
+            if (err) {
+            	dialog.showErrorBox("Erro", "Erro ao abrir o arquivo " + filename);
+            	console.log("Erro ao abrir o arquivo " + filename);
+            	console.log(err);
+            } else {
+							App.proxy_data = null;
+							App.current_proxy_no = 0;
+            	App.proxy_data = data;
+            	change_status("Carregando lista de Proxy's");
+            	App.proxy_data = App.proxy_data.split('\n');
+          		change_status("Pronto");
+							window.next_proxy();
+						}
+        });
+			}
 		};
 
 		window.open_window = function(url) {
-			var _win = nw.Window.open(url, {}, function(win) {
-				App.current_window = win;
+			App.current_window = new window.BrowserWindow({ width: 800, height: 600, show: true });
+			App.current_window.loadURL(url);
 
-				change_status("Aguardando carregamento");
+			change_status("Aguardando carregamento");
+			var webContents = App.current_window.webContents;
+			window.wc = webContents;
 
-				win.window.document.addEventListener("DOMContentLoaded", function() {
-					setTimeout(function() {
-						change_status("Clicando no link");
-						try {
-							win.window.document.querySelector("#skip_button").click();
-						} catch(err) {
-							console.log("Não encontrou link Skip button");
-						}
-						setTimeout(function() {
-							change_status("Aguardando para fechar");
-							win.close();
-							window.App.clicks_no++;
-							window.App.next = true;
-						}, 4000);
-					}, 7000);
-				}, false);
+			webContents.on('did-finish-load', function() {
+				alert("dom ready");
+				if (App.timedout == false) {
+					console.log("did-finish-load link Window");
 
-			
+					App.intervals.wait_time = setTimeout(function() {
+								change_status("Clicando no link");
+								try {
+									webContents.executeJavaScript("window.document.querySelector('#skip_button').click()");
+									console.log("Clicou no botão Skip com sucesso");
+								} catch(err) {
+									console.log("Não encontrou link do botão Skip");
+									if (App.current_window) {
+										App.current_window.close();
+									}
+								}
 
+								App.intervals.wait_after_click = setTimeout(function() {
+									// change_status("Aguardando para fechar");
+									// if (App.current_window) {
+									// 	App.current_window.close();
+									// }
+									// window.App.clicks_no++;
+								}, App.wait_after_click);
+					}, App.wait_time);
+				}
 			});
-		};
 
-		window.close = function() {
-			gui.App.quit();
-		};
+			// App.current_window.on('close', function() {
+			// 	clearTimeout(App.intervals.wait_after_click);
+			// 	clearTimeout(App.intervals.wait_time);
+			// 	window.App.next = true;
+			// 	App.current_window = null;
+			// });
 
+		};
 
 		(function init() {
-			gui.App.clearCache();
+			window.storage.get('proxy_list', function(error, data) {
+				App.proxy_file_name = data.data;
 
-			
-			App.proxy_file_name = localStorage.getItem("proxy_list");
-
-			if (!!App.proxy_file_name) {
-				var file_name = App.proxy_file_name.split("\\");
-				file_name = file_name[file_name.length - 1];
-				$(document).find("#proxy_file_list input[type=text]").val(file_name);
-			}
-
-			window.read_proxy_list(App.proxy_file_name, function() {
-				window.next_proxy();
-				change_status("Pronto");
+				if (!!App.proxy_file_name) {
+					window.read_proxy_list(App.proxy_file_name);
+					var file_name = App.proxy_file_name.split("\\");
+					file_name = file_name[file_name.length - 1];
+					$(document).find("#proxy_file_list input[type=text]").val(file_name);
+				}
 			});
 
-			window.get_links();
-			window.update_status();
+			window.storage.get('links_textarea', function(error, data) {
+				var links_textarea = data.data;
 
+				if (links_textarea) {
+					$("#links_textarea").val(links_textarea);
+				}
+
+				window.get_links();
+			});
+
+			window.update_status();
 			window.App.next = true;
 		}());
 
-		
 
-		$("#iniciar_btn").click(function() {
-			if ($("#iniciar_btn").html() == "Iniciar") {
-				$("#iniciar_btn").html("Parar");
-				$("#iniciar_btn").addClass("loading-cube");
+		window.App.running_interval = setInterval(function() {
+			if (window.App.running == true && App.done == false) {
+				App.last_window = window.get_time(); // remove
 
-				App.started = true;
-				$('#links_textarea').attr("disabled", "disabled");
-				
-				window.App.interval = setInterval(function() {
-					
-					if (App.done == false && window.App.next || (window.get_time() - App.last_window  > App.timeout) ) {
-						
-						if (App.current_link >=  App.links_data.length) {
-							window.next_proxy();
-							App.current_link = 0;
-						} 
+				if (window.App.next || (window.get_time() - App.last_window  > App.timeout)) {
 
-						App.last_window = window.get_time();
-						window.App.next = false;
-						if (App.current_window) {
-							App.current_window.close();
-						}
+					if ((window.get_time() - App.last_window  > App.timeout)) {
+						App.timedout = true;
+						clearTimeout(App.intervals.wait_after_click);
+						clearTimeout(App.intervals.wait_time);
+					}
 
-						window.open_window(App.links_data[App.current_link]);
+					if (App.current_window) {
+					//	App.current_window.close();
+					}
 
+					if (App.current_link >=  App.links_data.length) {
+						window.next_proxy();
+						App.current_link = 0;
+					} else {
 						App.current_link++;
 					}
 
-					window.update_status();
-				}, 500);
 
-			} else if($("#iniciar_btn").html() == "Parar") {
-				$("#iniciar_btn").removeClass("loading-cube");
-				App.done = true;
-				clearInterval(App.interval);
+					window.App.next = false;
 
-				$("#iniciar_btn").html("Reiniciar");
-			} else {
-				gui.Window.reload();
+					window.open_window(App.links_data[App.current_link]);
+
+					App.last_window = window.get_time();
+				}
+
+				window.update_status();
+
 			}
 
+		}, 1000);
+
+
+		$("#iniciar_btn").click(function() {
+			if ($("#iniciar_btn").html() == "Parar") {
+				$("#iniciar_btn").removeClass("loading-cube");
+				App.running = false;
+
+				$("#iniciar_btn").html("Continuar");
+			} else {
+					$("#iniciar_btn").html("Parar");
+					$("#iniciar_btn").addClass("loading-cube");
+
+					App.running = true;
+					$('#links_textarea').attr("disabled", "disabled");
+			}
 		});
 
 	});
 } catch(err) {
-	alert("Erro " + err.message);
+	dialog.showErrorBox("Ops, ocorreu um erro", err.message);
 }
+
+window.onerror = function (msg, url, line) {
+    dialog.showErrorBox("Ops, ocorreu um erro", msg);
+};
