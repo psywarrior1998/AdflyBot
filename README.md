@@ -1,4 +1,4 @@
-# Adfly-Bot
+# Easy Peasy Lemon Squeezy - Adfly-Bot
 ---
 Simple Adfly Clicker Bot. This bot use Electron to handle all the Window/Proxy/Click's and interface.
 
