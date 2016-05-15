@@ -31,10 +31,7 @@ window.App = {
 	},
 	wait_time: 10000,
 	wait_after_click: 4000,
-
 };
-
-
 
 try {
 	$(function() {
@@ -73,7 +70,7 @@ try {
 		    return validateNum(port, 1, 65535) &&
 		        ip.length == 4 &&
 		        ip.every(function (segment) {
-		            return validateNum(segment, 0, 255);
+		        	return validateNum(segment, 0, 255);
 		        });
 		};
 
@@ -131,9 +128,7 @@ try {
 		});
 
 		window.open_file = function() {
-			dialog.showOpenDialog({ filters: [
-			   { name: 'Arquivos aceitos', extensions: ['txt', 'csv'] }
-			 ]}, function (fileNames) {
+			dialog.showOpenDialog({ filters: [{ name: 'Arquivos aceitos', extensions: ['txt', 'csv']}]}, function (fileNames) {
 				if (fileNames === undefined) {
 					return;
 				}
@@ -170,7 +165,7 @@ try {
 			App.current_proxy = App.proxy_data[App.current_proxy_no];
 			App.current_proxy = String(App.current_proxy).trim();
 			if (window.validateIpAndPort(App.current_proxy)) {
-					change_proxy(App.current_proxy);
+				change_proxy(App.current_proxy);
 			} else {
 				dialog.showErrorBox("Ops, ocorreu um erro", "Não foi possivel definir o proxy: " + App.current_proxy);
 				call_next_proxy = true;
@@ -202,25 +197,25 @@ try {
 		window.read_proxy_list = function(filename) {
 			if (filename) {
 				fs.readFile(filename, "utf8", function (err, data) {
-            if (err) {
-            	dialog.showErrorBox("Erro", "Erro ao abrir o arquivo " + filename);
-            	console.log("Erro ao abrir o arquivo " + filename);
-            	console.log(err);
-            } else {
-							App.proxy_data = null;
-							App.current_proxy_no = 0;
-            	App.proxy_data = data;
-            	change_status("Carregando lista de Proxy's");
-            	App.proxy_data = App.proxy_data.split('\n');
-          		change_status("Pronto");
-							window.next_proxy();
-						}
-        });
+		            if (err) {
+		            	dialog.showErrorBox("Erro", "Erro ao abrir o arquivo " + filename);
+		            	console.log("Erro ao abrir o arquivo " + filename);
+		            	console.log(err);
+		            } else {
+						App.proxy_data = null;
+						App.current_proxy_no = 0;
+		            	App.proxy_data = data;
+		            	change_status("Carregando lista de Proxy's");
+		            	App.proxy_data = App.proxy_data.split('\n');
+		          		change_status("Pronto");
+						window.next_proxy();
+					}
+        		});
 			}
 		};
 
 		window.open_window = function(url) {
-			App.current_window = new window.BrowserWindow({ width: 800, height: 600, show: true });
+			App.current_window = new window.BrowserWindow({ width: 800, height: 600, show: false });
 			App.current_window.loadURL(url);
 
 			change_status("Aguardando carregamento");
@@ -228,10 +223,7 @@ try {
 			window.wc = webContents;
 
 			webContents.on('did-finish-load', function() {
-				alert("dom ready");
 				if (App.timedout == false) {
-					console.log("did-finish-load link Window");
-
 					App.intervals.wait_time = setTimeout(function() {
 								change_status("Clicando no link");
 								try {
@@ -245,22 +237,22 @@ try {
 								}
 
 								App.intervals.wait_after_click = setTimeout(function() {
-									// change_status("Aguardando para fechar");
-									// if (App.current_window) {
-									// 	App.current_window.close();
-									// }
-									// window.App.clicks_no++;
+									change_status("Aguardando para fechar");
+									if (App.current_window) {
+										App.current_window.close();
+									}
+									window.App.clicks_no++;
 								}, App.wait_after_click);
 					}, App.wait_time);
 				}
 			});
 
-			// App.current_window.on('close', function() {
-			// 	clearTimeout(App.intervals.wait_after_click);
-			// 	clearTimeout(App.intervals.wait_time);
-			// 	window.App.next = true;
-			// 	App.current_window = null;
-			// });
+			App.current_window.on('close', function() {
+				clearTimeout(App.intervals.wait_after_click);
+				clearTimeout(App.intervals.wait_time);
+				window.App.next = true;
+				App.current_window = null;
+			});
 
 		};
 
@@ -278,14 +270,12 @@ try {
 
 			window.storage.get('links_textarea', function(error, data) {
 				var links_textarea = data.data;
-
 				if (links_textarea) {
 					$("#links_textarea").val(links_textarea);
 				}
 
 				window.get_links();
 			});
-
 			window.update_status();
 			window.App.next = true;
 		}());
@@ -294,7 +284,7 @@ try {
 		window.App.running_interval = setInterval(function() {
 			if (window.App.running == true && App.done == false) {
 				App.last_window = window.get_time(); // remove
-
+				
 				if (window.App.next || (window.get_time() - App.last_window  > App.timeout)) {
 
 					if ((window.get_time() - App.last_window  > App.timeout)) {
@@ -304,7 +294,7 @@ try {
 					}
 
 					if (App.current_window) {
-					//	App.current_window.close();
+						App.current_window.close();
 					}
 
 					if (App.current_link >=  App.links_data.length) {
@@ -314,18 +304,12 @@ try {
 						App.current_link++;
 					}
 
-
 					window.App.next = false;
-
 					window.open_window(App.links_data[App.current_link]);
-
 					App.last_window = window.get_time();
 				}
-
 				window.update_status();
-
 			}
-
 		}, 1000);
 
 
@@ -336,11 +320,11 @@ try {
 
 				$("#iniciar_btn").html("Continuar");
 			} else {
-					$("#iniciar_btn").html("Parar");
-					$("#iniciar_btn").addClass("loading-cube");
+				$("#iniciar_btn").html("Parar");
+				$("#iniciar_btn").addClass("loading-cube");
 
-					App.running = true;
-					$('#links_textarea').attr("disabled", "disabled");
+				App.running = true;
+				$('#links_textarea').attr("disabled", "disabled");
 			}
 		});
 
