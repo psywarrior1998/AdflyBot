@@ -1,9 +1,17 @@
 {
   "name"    : "Easy Peasy Lemon Squeezy",
-  "author"  : "Pedro Henrique - system.pedrohenrique@gmail.com",
   "version" : "0.1.0",
   "main"    : "main.js",
   "scripts": {
     "start": "electron ."
+  },
+  "author": {
+    "name": "Pedro Henrique",
+    "email": "system.pedrohenrique@gmail.com",
+    "url": "http://pedrohenrique.ninja"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/systemmovie/AdflyBot.git"
   }
 }
